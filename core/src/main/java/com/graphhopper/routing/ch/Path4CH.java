@@ -18,82 +18,41 @@
 package com.graphhopper.routing.ch;
 
 import com.graphhopper.routing.PathBidirRef;
-import com.graphhopper.routing.util.FlagEncoder;
 import com.graphhopper.routing.weighting.Weighting;
 import com.graphhopper.storage.Graph;
-import com.graphhopper.util.CHEdgeIteratorState;
-import com.graphhopper.util.EdgeIterator;
+import com.graphhopper.storage.ShortcutUnpacker;
+import com.graphhopper.util.EdgeIteratorState;
 
-/**
- * Recursively unpack shortcuts.
- * <p>
- *
- * @author Peter Karich
- * @see PrepareContractionHierarchies
- */
+import static com.graphhopper.util.EdgeIterator.NO_EDGE;
+
 public class Path4CH extends PathBidirRef {
-    private final Graph routingGraph;
+    private final ShortcutUnpacker shortcutUnpacker;
 
-    public Path4CH(Graph routingGraph, Graph baseGraph, Weighting weighting) {
+    public Path4CH(Graph routingGraph, Graph baseGraph, final Weighting weighting) {
         super(baseGraph, weighting);
-        this.routingGraph = routingGraph;
+        this.shortcutUnpacker = getShortcutUnpacker(routingGraph, weighting);
     }
 
     @Override
-    protected final void processEdge(int tmpEdge, int endNode, int prevEdgeId) {
+    protected final void processEdge(int edgeId, int adjNode, int prevEdgeId) {
         // Shortcuts do only contain valid weight so first expand before adding
         // to distance and time
-        expandEdge((CHEdgeIteratorState) routingGraph.getEdgeIteratorState(tmpEdge, endNode), false);
+        shortcutUnpacker.visitOriginalEdgesFwd(edgeId, adjNode, true, prevEdgeId);
     }
 
-    private void expandEdge(CHEdgeIteratorState mainEdgeState, boolean reverse) {
-        if (!mainEdgeState.isShortcut()) {
-            distance += mainEdgeState.getDistance();
-            time += weighting.calcMillis(mainEdgeState, reverse, EdgeIterator.NO_EDGE);
-            addEdge(mainEdgeState.getEdge());
-            return;
-        }
+    @Override
+    protected void processEdgeBwd(int edgeId, int adjNode, int nextEdgeId) {
+        shortcutUnpacker.visitOriginalEdgesBwd(edgeId, adjNode, true, nextEdgeId);
+    }
 
-        int skippedEdge1 = mainEdgeState.getSkippedEdge1();
-        int skippedEdge2 = mainEdgeState.getSkippedEdge2();
-        int from = mainEdgeState.getBaseNode(), to = mainEdgeState.getAdjNode();
-
-        // get properties like speed of the edge in the correct direction
-        if (reverse) {
-            int tmp = from;
-            from = to;
-            to = tmp;
-        }
-
-        // getEdgeProps could possibly return an empty edge if the shortcut is available for both directions
-        if (reverseOrder) {
-            CHEdgeIteratorState edgeState = (CHEdgeIteratorState) routingGraph.getEdgeIteratorState(skippedEdge1, to);
-            boolean empty = edgeState == null;
-            if (empty)
-                edgeState = (CHEdgeIteratorState) routingGraph.getEdgeIteratorState(skippedEdge2, to);
-
-            expandEdge(edgeState, false);
-
-            if (empty)
-                edgeState = (CHEdgeIteratorState) routingGraph.getEdgeIteratorState(skippedEdge1, from);
-            else
-                edgeState = (CHEdgeIteratorState) routingGraph.getEdgeIteratorState(skippedEdge2, from);
-
-            expandEdge(edgeState, true);
-        } else {
-            CHEdgeIteratorState iter = (CHEdgeIteratorState) routingGraph.getEdgeIteratorState(skippedEdge1, from);
-            boolean empty = iter == null;
-            if (empty)
-                iter = (CHEdgeIteratorState) routingGraph.getEdgeIteratorState(skippedEdge2, from);
-
-            expandEdge(iter, true);
-
-            if (empty)
-                iter = (CHEdgeIteratorState) routingGraph.getEdgeIteratorState(skippedEdge1, to);
-            else
-                iter = (CHEdgeIteratorState) routingGraph.getEdgeIteratorState(skippedEdge2, to);
-
-            expandEdge(iter, false);
-        }
+    protected ShortcutUnpacker getShortcutUnpacker(Graph routingGraph, final Weighting weighting) {
+        return new ShortcutUnpacker(routingGraph, new ShortcutUnpacker.Visitor() {
+            @Override
+            public void visit(EdgeIteratorState edge, boolean reverse, int prevOrNextEdgeId) {
+                distance += edge.getDistance();
+                time += weighting.calcMillis(edge, reverse, NO_EDGE);
+                addEdge(edge.getEdge());
+            }
+        }, false);
     }
 }

@@ -89,18 +89,28 @@ public class RoutingAlgorithmIT {
         }
 
         if (hopper.getCHFactoryDecorator().isEnabled()) {
-            final HintsMap chHints = new HintsMap(defaultHints).put(Parameters.CH.DISABLE, false);
+            final HintsMap chHints = new HintsMap(defaultHints);
+            chHints.put(Parameters.CH.DISABLE, false);
+            chHints.put(Parameters.Routing.EDGE_BASED, tMode.isEdgeBased());
             Weighting pickedWeighting = null;
-            for (Weighting tmpWeighting : hopper.getCHFactoryDecorator().getWeightings()) {
+            for (Weighting tmpWeighting : hopper.getCHFactoryDecorator().getNodeBasedWeightings()) {
+                if (tmpWeighting.equals(weighting)) {
+                    pickedWeighting = tmpWeighting;
+                    break;
+                }
+            }
+            // todo: not so sure about this, can the edge based weighting entry overwrite the picked weighting found
+            // in the node based weightings ?
+            for (Weighting tmpWeighting : hopper.getCHFactoryDecorator().getEdgeBasedWeightings()) {
                 if (tmpWeighting.equals(weighting)) {
                     pickedWeighting = tmpWeighting;
                     break;
                 }
             }
             if (pickedWeighting == null)
-                throw new IllegalStateException("Didn't find weighting " + hints.getWeighting() + " in " + hopper.getCHFactoryDecorator().getWeightings());
+                throw new IllegalStateException("Didn't find weighting " + hints.getWeighting() + " in " + hopper.getCHFactoryDecorator().getNodeBasedWeightings());
 
-            prepare.add(new AlgoHelperEntry(ghStorage.getGraph(CHGraph.class, pickedWeighting),
+            prepare.add(new AlgoHelperEntry(ghStorage.getCHGraph(pickedWeighting),
                     AlgorithmOptions.start(dijkstrabiOpts).hints(chHints).build(), idx, "dijkstrabi|ch|prepare|" + hints.getWeighting()) {
                 @Override
                 public RoutingAlgorithmFactory createRoutingFactory() {
@@ -108,7 +118,7 @@ public class RoutingAlgorithmIT {
                 }
             });
 
-            prepare.add(new AlgoHelperEntry(ghStorage.getGraph(CHGraph.class, pickedWeighting),
+            prepare.add(new AlgoHelperEntry(ghStorage.getCHGraph(pickedWeighting),
                     AlgorithmOptions.start(astarbiOpts).hints(chHints).build(), idx, "astarbi|ch|prepare|" + hints.getWeighting()) {
                 @Override
                 public RoutingAlgorithmFactory createRoutingFactory() {
@@ -126,7 +136,7 @@ public class RoutingAlgorithmIT {
         int noJvmWarming = N / 4;
 
         Random rand = new Random(0);
-        final EncodingManager eManager = new EncodingManager("car");
+        final EncodingManager eManager = EncodingManager.create("car");
         final GraphHopperStorage graph = new GraphBuilder(eManager).create();
 
         String bigFile = "10000EWD.txt.gz";
